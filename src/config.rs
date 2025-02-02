@@ -1,7 +1,6 @@
-use std::sync::Arc;
+use std::env;
 use actix_web::web;
 use dotenv::dotenv;
-use crate::database::UrlRepository;
 use crate::handlers::{generate_qr, redirect, shorten_url};
 
 pub fn init() {
@@ -14,12 +13,12 @@ fn init_dotenv() {
 }
 
 fn init_logging() {
-    // env::set_var("RUST_LOG", "info");
+    env::set_var("RUST_LOG", "debug");
     env_logger::init();
 }
 
-pub fn config<T: UrlRepository + 'static>(cfg: &mut web::ServiceConfig, db: Arc<T>) {
-    cfg.app_data(web::Data::new(db))
+pub fn actix_config(cfg: &mut web::ServiceConfig) {
+    cfg
         .service(shorten_url)
         .service(redirect)
         .service(generate_qr);

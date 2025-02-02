@@ -1,6 +1,5 @@
 use actix_web::{web, Responder, HttpResponse, get, post};
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 use rand::{distributions::Alphanumeric, Rng};
 use qrcode::QrCode;
 use image::Luma;
@@ -9,8 +8,8 @@ use crate::database::UrlRepository;
 use crate::models::ShortenRequest;
 
 #[post("/shorten")]
-async fn shorten_url<T: UrlRepository>(
-    db: web::Data<Arc<T>>,
+async fn shorten_url(
+    db: web::Data<Arc<dyn UrlRepository + Send + Sync>>,
     req: web::Json<ShortenRequest>,
 ) -> impl Responder {
     let short_url = req.custom_alias.clone().unwrap_or_else(|| {
@@ -38,10 +37,11 @@ async fn shorten_url<T: UrlRepository>(
 }
 
 #[get("/{short_url}")]
-async fn redirect<T: UrlRepository>(
-    db: web::Data<Arc<T>>,
+async fn redirect(
+    db: web::Data<Arc<dyn UrlRepository + Send + Sync>>,
     path: web::Path<String>,
 ) -> impl Responder {
+    info!("get the request");
     let short_url = path.into_inner();
     match db.get_url(&short_url).await {
         Ok(url) => {
@@ -53,14 +53,14 @@ async fn redirect<T: UrlRepository>(
 }
 
 #[get("/qrcode/{short_url}")]
-async fn generate_qr<T: UrlRepository>(
-    db: web::Data<Arc<T>>,
+async fn generate_qr(
+    db: web::Data<Arc<dyn UrlRepository + Send + Sync>>,
     path: web::Path<String>,
 ) -> impl Responder {
     let short_url = path.into_inner();
     match db.get_url(&short_url).await {
         Ok(url) => {
-            let qr_code = QrCode::new(url.original_url.as_bytes()).unwrap();
+            let qr_code = QrCode::new(&url.original_url).unwrap();
             let image = qr_code.render::<Luma<u8>>().build();
             let file_path = format!("static/{}.png", short_url);
             image.save(&file_path).unwrap();

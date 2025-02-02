@@ -3,15 +3,15 @@ use async_trait::async_trait;
 use sqlx::{Error, Row, SqlitePool};
 use crate::models::Url;
 #[async_trait]
-pub trait UrlRepository {
+pub trait UrlRepository: Send + Sync {
     async fn init_db(&self) -> Result<(), Error>;
     async fn insert_url(&self, original_url: &str, short_url: &str) -> Result<i64, Error>;
     async fn get_url(&self, short_url: &str) -> Result<Url, Error>;
 }
-
 pub struct SqliteUrlRepository {
     pool: Arc<SqlitePool>
 }
+
 
 impl SqliteUrlRepository {
     pub fn new(pool: Arc<SqlitePool>) -> Self {
