@@ -26,8 +26,6 @@ COPY migrations /app/migrations
 
 COPY static /app/static
 
-COPY .env /app/.env
-
 EXPOSE 8080
 
 ENV DATABASE_URL=sqlite:/app/url_shortener.db
