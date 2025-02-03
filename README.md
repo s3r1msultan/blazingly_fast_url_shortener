@@ -54,7 +54,7 @@ rxst.me/
 ### 📌 1️⃣ **Clone the Repository**
 ```sh
 git clone https://github.com/s3r1msultan/blazingly_fast_url_shortener.git
-cd blazingly_fast_url_shortener.me
+cd blazingly_fast_url_shortener
 ```
 
 ### 📌 2️⃣ **Setup the Environment**
@@ -75,7 +75,7 @@ cargo run
 ```
 
 ### 📌 5️⃣ **Open in Browser**
-Visit **[`http://127.0.0.1:8080`](http://127.0.0.1:8080)** and start shortening URLs.
+Visit **[`http://0.0.0.0:8080`](http://0.0.0.0:8080)** and start shortening URLs.
 
 ---
 
