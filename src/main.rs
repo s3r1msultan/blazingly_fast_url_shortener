@@ -40,7 +40,7 @@ async fn main() -> std::io::Result<()> {
                       .add(("X-XSS-Protection", "1; mode=block")))
             .configure(routes::routes)
     })
-        .bind("127.0.0.1:8080")?
+        .bind("0.0.0.0:8080")?
         .run()
         .await?;
 
