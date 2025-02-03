@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL Shortener</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f4f4f4;
+        }
+        #container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 350px;
+        }
+        input, button {
+            padding: 10px;
+            margin: 5px;
+            width: 90%;
+        }
+        .suggestions {
+            margin-top: 10px;
+        }
+        .suggestion {
+            display: inline-block;
+            padding: 5px 10px;
+            margin: 5px;
+            background-color: #007BFF;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .suggestion:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+<div id="container">
+    <h2>Shorten Your URL</h2>
+    <input type="text" id="url" placeholder="Enter URL">
+    <input type="text" id="alias" placeholder="Custom Alias (Optional)">
+    <button onclick="shortenUrl()">Shorten</button>
+    <p id="result"></p>
+    <div id="suggestions" class="suggestions"></div>
+</div>
+
+<script>
+    async function shortenUrl() {
+        const url = document.getElementById("url").value;
+        const alias = document.getElementById("alias").value;
+        const baseUrl = window.location.origin;
+
+        const response = await fetch(`${baseUrl}/shorten`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ original_url: url, custom_alias: alias || null })
+        });
+
+        const data = await response.json();
+        const resultDiv = document.getElementById("result");
+        const suggestionsDiv = document.getElementById("suggestions");
+
+        if (response.ok) {
+            resultDiv.innerHTML = `Short URL: <a href="${baseUrl}/${data.short_url}" target="_blank">${baseUrl}/${data.short_url}</a>`;
+            suggestionsDiv.innerHTML = ""; // Clear suggestions on success
+        } else if (data.error === "Alias already taken") {
+            resultDiv.innerHTML = "Alias already taken. Try one of these:";
+            suggestionsDiv.innerHTML = data.suggestions.map(suggestion =>
+                `<span class="suggestion" onclick="useSuggestion('${suggestion}')">${suggestion}</span>`
+            ).join(" ");
+        } else {
+            resultDiv.innerHTML = data.error;
+            suggestionsDiv.innerHTML = "";
+        }
+    }
+
+    function useSuggestion(suggestedAlias) {
+        document.getElementById("alias").value = suggestedAlias;
+    }
+</script>
+</body>
+</html>

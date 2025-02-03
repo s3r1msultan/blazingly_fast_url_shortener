@@ -1,73 +1,96 @@
-use actix_web::{web, Responder, HttpResponse, get, post};
+use actix_files::NamedFile;
 use std::sync::Arc;
-use rand::{distributions::Alphanumeric, Rng};
-use qrcode::QrCode;
-use image::Luma;
-use log::{info, error};
+use actix_web::{web, HttpResponse, Responder};
+use log::{info, error, debug};
 use crate::database::UrlRepository;
+use crate::hash::{base62_encode, fnv1a_hash, generate_leet_variations};
 use crate::models::ShortenRequest;
+use crate::utils::is_valid_url;
 
-#[post("/shorten")]
-async fn shorten_url(
+pub async fn shorten_url(
     db: web::Data<Arc<dyn UrlRepository + Send + Sync>>,
     req: web::Json<ShortenRequest>,
 ) -> impl Responder {
-    let short_url = req.custom_alias.clone().unwrap_or_else(|| {
-        rand::thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(6)
-            .map(char::from)
-            .collect()
-    });
+
+    if !is_valid_url(&req.original_url) {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "Invalid URL"
+        }));
+    }
+
+    let short_url = if let Some(alias) = &req.custom_alias {
+        if alias.len() < 3 {
+            return HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "Alias is too short"
+            }));
+        }
+        if alias.chars().any(|c| !c.is_alphanumeric()) {
+            return HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "Alias contains invalid characters"
+            }));
+        }
+        alias
+    } else {
+        &base62_encode(fnv1a_hash(&req.original_url))
+    };
+
+    if let Ok(Some(_)) = db.get_url(&short_url).await {
+        let mut suggestions = Vec::new();
+        let variations = generate_leet_variations(&short_url);
+
+        for variation in variations {
+            if suggestions.len() == 5 {
+                break;
+            }
+            if let Ok(None) = db.get_url(&variation).await {
+                suggestions.push(variation);
+            }
+        }
+
+        return HttpResponse::Conflict().json(serde_json::json!({
+            "error": "Alias already taken",
+            "suggestions": suggestions
+        }));
+    }
 
     match db.insert_url(&req.original_url, &short_url).await {
         Ok(_) => {
-            let qr_code = QrCode::new(&req.original_url).unwrap();
-            let image = qr_code.render::<Luma<u8>>().build();
-            let file_path = format!("static/{}.png", short_url);
-            image.save(&file_path).unwrap();
-            info!("Shortened URL created: {} -> {}", req.original_url, short_url);
-            HttpResponse::Ok().json(serde_json::json!({"short_url": short_url, "qr_code": file_path}))
+            info!("{} -> {}", req.original_url, short_url);
+            HttpResponse::Ok().json(serde_json::json!({
+                "short_url": short_url
+            }))
         }
         Err(err) => {
-            error!("Database insert failed: {}", err);
+            error!("Database error: {}", err);
             HttpResponse::InternalServerError().finish()
         }
     }
 }
 
-#[get("/{short_url}")]
-async fn redirect(
-    db: web::Data<Arc<dyn UrlRepository + Send + Sync>>,
-    path: web::Path<String>,
-) -> impl Responder {
-    info!("get the request");
-    let short_url = path.into_inner();
-    match db.get_url(&short_url).await {
-        Ok(url) => {
-            info!("Redirecting to: {}", url.original_url);
-            HttpResponse::Found().append_header(("Location", url.original_url)).finish()
-        }
-        Err(_) => HttpResponse::NotFound().finish(),
-    }
-}
 
-#[get("/qrcode/{short_url}")]
-async fn generate_qr(
+pub async fn redirect(
     db: web::Data<Arc<dyn UrlRepository + Send + Sync>>,
     path: web::Path<String>,
 ) -> impl Responder {
     let short_url = path.into_inner();
     match db.get_url(&short_url).await {
         Ok(url) => {
-            let qr_code = QrCode::new(&url.original_url).unwrap();
-            let image = qr_code.render::<Luma<u8>>().build();
-            let file_path = format!("static/{}.png", short_url);
-            image.save(&file_path).unwrap();
-            info!("Generated QR code for: {}", url.original_url);
-            HttpResponse::Ok().body(file_path)
+
+            let original_url = if let Some(url) = url {
+                url.original_url
+            } else {
+                return HttpResponse::NotFound().finish();
+            };
+
+            HttpResponse::Found().append_header(("Location", original_url)).finish()
         }
         Err(_) => HttpResponse::NotFound().finish(),
     }
 }
 
+pub async fn home() -> impl Responder {
+    NamedFile::open("./static/index.html").map_err(|e| {
+        error!("Error serving index.html: {}", e);
+        actix_web::error::ErrorInternalServerError(e)
+    })
+}
