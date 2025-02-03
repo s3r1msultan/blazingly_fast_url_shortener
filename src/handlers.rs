@@ -2,13 +2,14 @@ use actix_files::NamedFile;
 use std::sync::Arc;
 use actix_web::{web, HttpResponse, Responder};
 use log::{info, error, debug};
+
 use crate::database::UrlRepository;
 use crate::hash::{base62_encode, fnv1a_hash, generate_leet_variations};
-use crate::models::ShortenRequest;
-use crate::utils::is_valid_url;
+use crate::models::{ShortenRequest, DB};
+use crate::validation::is_valid_url;
 
 pub async fn shorten_url(
-    db: web::Data<Arc<dyn UrlRepository + Send + Sync>>,
+    db: web::Data<DB>,
     req: web::Json<ShortenRequest>,
 ) -> impl Responder {
 
@@ -34,7 +35,7 @@ pub async fn shorten_url(
         &base62_encode(fnv1a_hash(&req.original_url))
     };
 
-    if let Ok(Some(_)) = db.get_url(&short_url).await {
+    if let Ok(Some(_)) = db.read().await.get_url(&short_url).await {
         let mut suggestions = Vec::new();
         let variations = generate_leet_variations(&short_url);
 
@@ -42,7 +43,7 @@ pub async fn shorten_url(
             if suggestions.len() == 5 {
                 break;
             }
-            if let Ok(None) = db.get_url(&variation).await {
+            if let Ok(None) = db.read().await.get_url(&variation).await {
                 suggestions.push(variation);
             }
         }
@@ -53,7 +54,7 @@ pub async fn shorten_url(
         }));
     }
 
-    match db.insert_url(&req.original_url, &short_url).await {
+    match db.read().await.insert_url(&req.original_url, &short_url).await {
         Ok(_) => {
             info!("{} -> {}", req.original_url, short_url);
             HttpResponse::Ok().json(serde_json::json!({
@@ -69,11 +70,11 @@ pub async fn shorten_url(
 
 
 pub async fn redirect(
-    db: web::Data<Arc<dyn UrlRepository + Send + Sync>>,
+    db: web::Data<DB>,
     path: web::Path<String>,
 ) -> impl Responder {
     let short_url = path.into_inner();
-    match db.get_url(&short_url).await {
+    match db.read().await.get_url(&short_url).await {
         Ok(url) => {
 
             let original_url = if let Some(url) = url {
@@ -93,4 +94,33 @@ pub async fn home() -> impl Responder {
         error!("Error serving index.html: {}", e);
         actix_web::error::ErrorInternalServerError(e)
     })
+}
+
+pub async fn url_info(
+    db: web::Data<DB>,
+    path: web::Path<String>,
+) -> impl Responder {
+    let short_url = path.into_inner();
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    match db.read().await.get_url(&short_url).await {
+        Ok(Some(url)) => {
+            if url.expiration_date <= now {
+                return HttpResponse::Gone().json(serde_json::json!({
+                    "error": "URL has expired"
+                }));
+            }
+
+            HttpResponse::Ok().json(serde_json::json!({
+                "short_url": short_url,
+                "expiration_date": url.expiration_date
+            }))
+        }
+        Ok(None) => HttpResponse::NotFound().json(serde_json::json!({
+            "error": "Short URL not found"
+        })),
+        Err(_) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": "Database error"
+        })),
+    }
 }

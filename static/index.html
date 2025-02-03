@@ -27,8 +27,17 @@
             margin: 5px;
             width: 90%;
         }
-        .suggestions {
+        #info, #existingInfo, #suggestions {
             margin-top: 10px;
+            padding: 10px;
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+            text-align: left;
+            display: none;
+        }
+        #info p, #existingInfo p {
+            margin: 5px 0;
         }
         .suggestion {
             display: inline-block;
@@ -42,6 +51,9 @@
         .suggestion:hover {
             background-color: #0056b3;
         }
+        .error {
+            color: red;
+        }
     </style>
 </head>
 <body>
@@ -49,38 +61,110 @@
     <h2>Shorten Your URL</h2>
     <input type="text" id="url" placeholder="Enter URL">
     <input type="text" id="alias" placeholder="Custom Alias (Optional)">
-    <button onclick="shortenUrl()">Shorten</button>
-    <p id="result"></p>
-    <div id="suggestions" class="suggestions"></div>
+    <button onclick="checkExistingUrl()">Shorten</button>
+    <div id="info"></div>
+    <div id="existingInfo"></div>
+    <div id="suggestions"></div>
 </div>
 
 <script>
-    async function shortenUrl() {
-        const url = document.getElementById("url").value;
-        const alias = document.getElementById("alias").value;
+    async function checkExistingUrl() {
+        const url = document.getElementById("url").value.trim();
+        const alias = document.getElementById("alias").value.trim();
         const baseUrl = window.location.origin;
-
-        const response = await fetch(`${baseUrl}/shorten`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ original_url: url, custom_alias: alias || null })
-        });
-
-        const data = await response.json();
-        const resultDiv = document.getElementById("result");
+        const infoDiv = document.getElementById("info");
+        const existingDiv = document.getElementById("existingInfo");
         const suggestionsDiv = document.getElementById("suggestions");
 
-        if (response.ok) {
-            resultDiv.innerHTML = `Short URL: <a href="${baseUrl}/${data.short_url}" target="_blank">${baseUrl}/${data.short_url}</a>`;
-            suggestionsDiv.innerHTML = ""; // Clear suggestions on success
-        } else if (data.error === "Alias already taken") {
-            resultDiv.innerHTML = "Alias already taken. Try one of these:";
-            suggestionsDiv.innerHTML = data.suggestions.map(suggestion =>
-                `<span class="suggestion" onclick="useSuggestion('${suggestion}')">${suggestion}</span>`
-            ).join(" ");
-        } else {
-            resultDiv.innerHTML = data.error;
-            suggestionsDiv.innerHTML = "";
+        infoDiv.style.display = "none";
+        existingDiv.style.display = "none";
+        suggestionsDiv.style.display = "none";
+
+        if (!url) {
+            infoDiv.innerHTML = '<p class="error">Please enter a URL.</p>';
+            infoDiv.style.display = "block";
+            return;
+        }
+
+        if (alias) {
+            try {
+                const response = await fetch(`${baseUrl}/url/${alias}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    existingDiv.innerHTML = `
+                        <p class="error">Alias already taken.</p>
+                        <p><strong>Existing URL:</strong> <a href="${data.original_url}" target="_blank">${data.original_url}</a></p>
+                        <p><strong>Short URL:</strong> <a href="${baseUrl}/${data.short_url}" target="_blank">${baseUrl}/${data.short_url}</a></p>
+                        <p><strong>Created At:</strong> ${data.created_at}</p>
+                        <p><strong>Expiration Date:</strong> ${data.expiration_date}</p>
+                    `;
+                    existingDiv.style.display = "block";
+                    return; // Stop here if alias is already taken
+                }
+            } catch (error) {
+                console.error("Error checking existing alias:", error);
+            }
+        }
+
+        // Proceed to shorten the URL if alias is available
+        shortenUrl(url, alias);
+    }
+
+    async function shortenUrl(url, alias) {
+        const baseUrl = window.location.origin;
+        const infoDiv = document.getElementById("info");
+        const suggestionsDiv = document.getElementById("suggestions");
+
+        try {
+            const response = await fetch(`${baseUrl}/shorten`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ original_url: url, custom_alias: alias || null })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                infoDiv.innerHTML = `
+                    <p><strong>Short URL:</strong> <a href="${baseUrl}/${data.short_url}" target="_blank">${baseUrl}/${data.short_url}</a></p>
+                `;
+                infoDiv.style.display = "block";
+                suggestionsDiv.style.display = "none";
+            } else if (data.error === "Alias already taken") {
+                fetchExistingUrlInfo(alias);
+                suggestionsDiv.innerHTML = `<p>Try one of these:</p>` + data.suggestions.map(suggestion =>
+                    `<span class="suggestion" onclick="useSuggestion('${suggestion}')">${suggestion}</span>`
+                ).join(" ");
+                suggestionsDiv.style.display = "block";
+            } else {
+                infoDiv.innerHTML = `<p class="error">${data.error}</p>`;
+                infoDiv.style.display = "block";
+                suggestionsDiv.style.display = "none";
+            }
+        } catch (error) {
+            infoDiv.innerHTML = '<p class="error">Failed to shorten URL.</p>';
+            infoDiv.style.display = "block";
+            suggestionsDiv.style.display = "none";
+        }
+    }
+
+    async function fetchExistingUrlInfo(alias) {
+        const baseUrl = window.location.origin;
+        const existingDiv = document.getElementById("existingInfo");
+
+        try {
+            const response = await fetch(`${baseUrl}/u/${alias}`);
+            if (response.ok) {
+                const data = await response.json();
+                existingDiv.innerHTML = `
+                    <p class="error">Alias already taken.</p>
+                    <p><strong>Short URL:</strong> <a href="${baseUrl}/${data.short_url}" target="_blank">${baseUrl}/${data.short_url}</a></p>
+                    <p><strong>Expiration Date:</strong> ${data.expiration_date}</p>
+                `;
+                existingDiv.style.display = "block";
+            }
+        } catch (error) {
+            console.error("Error fetching existing URL info:", error);
         }
     }
 
