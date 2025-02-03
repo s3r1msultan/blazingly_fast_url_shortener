@@ -14,7 +14,7 @@ COPY . .
 
 RUN cargo build --release --verbose
 
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 WORKDIR /app
 
